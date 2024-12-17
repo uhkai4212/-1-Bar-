@@ -1,0 +1,239 @@
+-- you can add your own commands to these just edit the code, its open sourced 
+-- it also has a built in anti void feature it might be buggy so be careful.
+
+-- Services
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+
+-- Initialize last safe position
+local lastSafePosition = humanoidRootPart.Position
+local safePositionSet = false -- Track if a safe position has been set
+
+-- ESP Toggle State
+local espEnabled = false
+local highlights = {} -- Store highlight objects
+
+-- Function to check if the player is on the ground
+local function isOnGround()
+    local ray = Ray.new(humanoidRootPart.Position, Vector3.new(0, -5, 0)) -- Ray 5 studs downward
+    local part = Workspace:FindPartOnRay(ray, character)
+    return part and part.CanCollide -- Check if part is found and is collidable (i.e., ground)
+end
+
+-- Update the last safe position only if the player is grounded
+local function updateLastSafePosition()
+    if isOnGround() then
+        lastSafePosition = humanoidRootPart.Position
+        safePositionSet = true
+    end
+end
+
+-- Continuously check if player is grounded and update the safe position
+RunService.Heartbeat:Connect(function()
+    updateLastSafePosition()
+
+    -- If player is falling with no ground below and has a safe position, teleport to last safe position
+    if not isOnGround() and safePositionSet and humanoidRootPart.Position.Y < -50 then
+        humanoidRootPart.CFrame = CFrame.new(lastSafePosition + Vector3.new(0, 5, 0)) -- Teleport slightly above ground level
+    end
+end)
+
+-- Create ESP highlights for all players
+local function toggleESP(state)
+    if state then
+        for _, targetPlayer in pairs(Players:GetPlayers()) do
+            if targetPlayer ~= player and targetPlayer.Character then
+                local highlight = Instance.new("Highlight")
+                highlight.Adornee = targetPlayer.Character
+                highlight.FillColor = Color3.new(0, 1, 0) -- Green highlight
+                highlight.OutlineColor = Color3.new(1, 1, 1) -- White outline
+                highlight.Parent = targetPlayer.Character
+                highlights[targetPlayer] = highlight
+            end
+        end
+    else
+        for _, highlight in pairs(highlights) do
+            if highlight and highlight.Parent then
+                highlight:Destroy()
+            end
+        end
+        highlights = {} -- Clear the stored highlights
+    end
+    espEnabled = state
+end
+
+-- UI for Command Feedback
+local notificationFrame = Instance.new("Frame")
+notificationFrame.Size = UDim2.new(0.3, 0, 0.1, 0)
+notificationFrame.Position = UDim2.new(0, 10, 0, 10)
+notificationFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+notificationFrame.BackgroundTransparency = 0
+notificationFrame.Visible = false
+notificationFrame.Parent = player:WaitForChild("PlayerGui")
+
+local notificationText = Instance.new("TextLabel")
+notificationText.Size = UDim2.new(1, 0, 0.8, 0)
+notificationText.Text = "Command executed!"
+notificationText.TextColor3 = Color3.fromRGB(255, 255, 255)
+notificationText.TextTransparency = 1
+notificationText.BackgroundTransparency = 1
+notificationText.TextScaled = true
+notificationText.Parent = notificationFrame
+
+local function showNotification(message)
+    notificationText.Text = message
+    notificationFrame.Visible = true
+    notificationText.TextTransparency = 1
+
+    local fadeInTween = TweenService:Create(notificationText, TweenInfo.new(0.3), {TextTransparency = 0})
+    fadeInTween:Play()
+
+    delay(3, function()
+        local fadeOutTween = TweenService:Create(notificationText, TweenInfo.new(0.3), {TextTransparency = 1})
+        fadeOutTween:Play()
+        fadeOutTween.Completed:Connect(function()
+            notificationFrame.Visible = false
+        end)
+    end)
+end
+
+-- Function to create the main UI with a button and input box
+local function createCommandUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    
+    local topButton = Instance.new("TextButton")
+    topButton.Parent = screenGui
+    topButton.Size = UDim2.new(0.15, 0, 0, 40)
+    topButton.Position = UDim2.new(0.75, 0, 0, 10)
+    topButton.BackgroundColor3 = Color3.new(0, 0, 0)
+    topButton.BorderSizePixel = 0
+    topButton.Text = ""
+
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.Parent = topButton
+    uiCorner.CornerRadius = UDim.new(0, 15)
+
+    local blurEffect = Instance.new("BlurEffect")
+    blurEffect.Size = 0
+    blurEffect.Parent = game:GetService("Lighting")
+
+    local inputBox = Instance.new("TextBox")
+    inputBox.Parent = screenGui
+    inputBox.Size = UDim2.new(0.3, 0, 0.1, 0)
+    inputBox.Position = UDim2.new(0.35, 0, 0.45, 0)
+    inputBox.BackgroundTransparency = 1
+    inputBox.TextTransparency = 1
+    inputBox.TextColor3 = Color3.new(1, 1, 1)
+    inputBox.Font = Enum.Font.Gotham
+    inputBox.TextScaled = true
+    inputBox.TextSize = 30
+    inputBox.PlaceholderText = "Type a command..."
+    inputBox.Visible = false
+
+    local inputCorner = Instance.new("UICorner")
+    inputCorner.Parent = inputBox
+    inputCorner.CornerRadius = UDim.new(0, 15)
+
+    local function onButtonClicked()
+        inputBox.Visible = true
+        inputBox:CaptureFocus()
+
+        local blurTween = TweenService:Create(
+            blurEffect,
+            TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {Size = 15}
+        )
+        blurTween:Play()
+
+        local inputTween = TweenService:Create(
+            inputBox,
+            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {TextTransparency = 0}
+        )
+        inputTween:Play()
+    end
+
+    topButton.MouseButton1Click:Connect(onButtonClicked)
+
+    -- Command execution function with "ws", "jp", "woosh", "esp", and "utg" commands
+    local function executeCommand(command)
+        local notificationMessage = "Invalid command."
+        local cmd, value = command:match("^(%S+)%s*(%S*)$")
+
+        if cmd == "ws" and tonumber(value) then
+            humanoid.WalkSpeed = tonumber(value)
+            notificationMessage = "WalkSpeed set to " .. value .. "!"
+
+        elseif cmd == "jp" and tonumber(value) then
+            humanoid.JumpPower = tonumber(value)
+            notificationMessage = "JumpPower set to " .. value .. "!"
+
+        elseif cmd == "woosh" then
+            local originalWalkSpeed = humanoid.WalkSpeed
+            humanoid.WalkSpeed = originalWalkSpeed * 3 -- Temporarily triple the speed
+            showNotification("Woosh activated!") -- Immediate feedback for `woosh`
+
+            delay(1, function() -- Revert speed after 1 second
+                humanoid.WalkSpeed = originalWalkSpeed
+                showNotification("Woosh ended!")
+            end)
+
+        elseif cmd == "esp" then
+            espEnabled = not espEnabled -- Toggle ESP
+            toggleESP(espEnabled)
+            notificationMessage = espEnabled and "ESP Enabled!" or "ESP Disabled!"
+
+        elseif cmd == "utg" then
+            local success, errorMessage = pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/uhkai4212/At-have/refs/heads/main/Hello"))()
+            end)
+
+            if success then
+                notificationMessage = "UTG script loaded successfully!"
+            else
+                notificationMessage = "Failed to load UTG script: " .. tostring(errorMessage)
+            end
+        end
+
+        showNotification(notificationMessage)
+    end
+
+    -- Function to fade out the input box and blur
+    local function fadeOutInput()
+        local blurTween = TweenService:Create(
+            blurEffect,
+            TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            {Size = 0}
+        )
+        blurTween:Play()
+
+        local inputTween = TweenService:Create(
+            inputBox,
+            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            {TextTransparency = 1}
+        )
+        inputTween:Play()
+
+        inputTween.Completed:Connect(function()
+            inputBox.Visible = false
+        end)
+    end
+
+    inputBox.FocusLost:Connect(function(_, enterPressed)
+        if enterPressed then
+            executeCommand(inputBox.Text:lower())
+        end
+        fadeOutInput()
+    end)
+end
+
+-- Create the command UI
+createCommandUI()
